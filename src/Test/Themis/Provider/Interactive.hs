@@ -1,0 +1,57 @@
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+module Test.Themis.Provider.Interactive (
+    runTests
+  , module Test.Themis.Test
+  ) where
+
+import Test.QuickCheck
+import Test.QuickCheck.Test (isSuccess)
+
+import Test.Themis.Test
+
+
+-- Simple test case evaluation that prints the "name: [PASSED]" message
+-- to the standard out if the test passed, otherwise the "name: [FAILED] msg expected found"
+-- message.
+runTestCase :: TestCase -> IO ()
+runTestCase t = testCaseCata eval shrink t >> return ()
+  where
+    shrink test tests = do
+      passed <- test
+      if passed
+        then return ()
+        else sequence_ tests
+      return passed
+
+    eval testName assertion = do
+      (passed, msg) <- evalAssertion assertion
+      putStrLn $ concat [testName, ": ", msg]
+      return passed
+
+    evalAssertion :: (Show a, Eq a) => Assertion a -> IO (Bool,String)
+    evalAssertion = assertionCata equals satisfies property where
+
+      equals expected found msg = return $
+        if (expected == found)
+          then (True, "[PASSED]")
+          else (False, concat $ ["[FAILED] ", msg, " Expected: ", show expected, " Found: ", show found])
+
+      satisfies property found msg = return $
+        if (property found)
+          then (True, "[PASSED]")
+          else (False, concat $ ["[FAILED] ", msg, " Found: ", show found, " does not satisfy the given property"])
+
+      property prop gen msg = do
+        let args = stdArgs { chatty = False }
+        result <- quickCheckWithResult args (forAll gen prop)
+        return $ if (isSuccess result)
+          then (True, "[PASSED]")
+          else (False, concat $ ["[FAILED] Output:", output result, " ", msg])
+
+runTestsIO :: TestSet -> IO ()
+runTestsIO = testSetCata (mapM_ runTestCase)
+
+-- Use the simple framework to print out the results to the stdout
+runTests = runTest runTestsIO
