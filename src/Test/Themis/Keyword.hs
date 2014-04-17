@@ -4,7 +4,13 @@
 module Test.Themis.Keyword (
     Keyword
   , runKeyword
-  , Commands(..)
+  , Context(..)
+  , Action
+  , safeAction
+  , safeActionRollback
+  , action
+  , actionRollback
+  , Interpretation
   , step
   , info
   , assertion
@@ -26,13 +32,13 @@ reusable scripts can be written in the haskell do notation.
 -}
 
 data Keyword k i a where
-  KRet    :: a -> Keyword k i a
-  KWord   :: k -> Keyword k i ()
+  KRet    :: a   -> Keyword k i a
+  KWord   :: k   -> Keyword k i ()
   KInfo   :: i a -> Keyword k i a
   KAssert :: Bool -> String -> Keyword k i ()
   KBind   :: Keyword k i a -> (a -> Keyword k i b) -> Keyword k i b
 
-instance Monad (Keyword k c) where
+instance Monad (Keyword k i) where
   return  = KRet
   m >>= k = KBind m k
 
@@ -40,10 +46,12 @@ instance Monad (Keyword k c) where
 step :: k -> Keyword k i ()
 step = KWord
 
+
 -- | The 'i' informational step which gather information about
 -- the system.
 info :: i a -> Keyword k i a
 info = KInfo
+
 
 -- | Assertion on the first value, the assertion fails if the
 -- first value is False. After the failure the revering actions
@@ -51,17 +59,55 @@ info = KInfo
 assertion :: Bool -> String -> Keyword k i ()
 assertion = KAssert
 
+-- | The action consits of a computation that can fail
+-- and possibly a revert action.
+type Action m e = (m (Either e ()), Maybe (m ()))
+
 -- | The interpretation of a 'k' basic keyword consists of a pair
 -- the first is a computation which computes an error result or a
 -- unit, and a revert action of the computation.
-type Interpretation k m e = k -> (m (Either e ()), Maybe (m ()))
+type Interpretation k m e = k -> Action m e
+
+safeAction :: (Monad m, Error e) => m a -> Action m e
+safeAction action =
+  ( do action
+       return (Right ())
+  , Nothing
+  )
+
+safeActionRollback :: (Monad m, Error e) => m a -> m b -> Action m e
+safeActionRollback action rollback =
+  ( do action
+       return (Right ())
+  , Just (rollback >> return ())
+  )
+
+-- The action has no rollback but the action can fail.
+action :: (Monad m, Error e) => m (Either e a) -> Action m e
+action act =
+  ( do x <- act
+       case x of
+         Left e  -> return $ Left e
+         Right _ -> return $ Right ()
+  , Nothing
+  )
+
+-- The action has a given rollback and the action can fail
+actionRollback :: (Monad m, Error e) => m (Either e a) -> m b -> Action m e
+actionRollback action rollback =
+  ( do x <- action
+       case x of
+         Left e  -> return $ Left e
+         Right y -> return $ Right ()
+  , Just (rollback >> return ())
+  )
 
 -- | The keyword evaluation context consists of an interpretation
 -- function, and an information command interpretation function, which
 -- turns every 'i' command into a monadic computation
 data Context k i m e = Context {
-    keyword     :: Interpretation k m e
-  , information :: forall a . i a -> m a
+    keywordInterpretation :: Interpretation k m e
+  , infoInterpretation    :: forall a . i a -> m a
   }
 
 newtype Interpreter m e a = KI { unKI :: CME.ErrorT e (CMS.StateT [m ()] m) a }
@@ -69,9 +115,11 @@ newtype Interpreter m e a = KI { unKI :: CME.ErrorT e (CMS.StateT [m ()] m) a }
 
 evalStage0 :: (Monad m, Error e) => Context k i m e -> Keyword k i a -> Interpreter m e a
 evalStage0 ctx (KRet a)  = return a
-evalStage0 ctx (KInfo c) = KI . lift . lift $ information ctx c
+
+evalStage0 ctx (KInfo c) = KI . lift . lift $ infoInterpretation ctx c
+
 evalStage0 ctx (KWord k) = do
-  let (step,revert) = keyword ctx k
+  let (step,revert) = keywordInterpretation ctx k
   x <- KI . lift $ lift step
   case x of
     Left e -> throwError e
@@ -79,9 +127,11 @@ evalStage0 ctx (KWord k) = do
       case revert of
         Just r  -> modify (r:)
         Nothing -> return ()
+
 evalStage0 ctx (KBind m k) = do
   x <- evalStage0 ctx m
   evalStage0 ctx (k x)
+
 evalStage0 ctx (KAssert a msg) = unless a . throwError $ strMsg msg
 
 evalStage1 :: (Monad m, Error e) => Interpreter m e a -> m (Either e a)
