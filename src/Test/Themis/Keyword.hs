@@ -35,6 +35,7 @@ data Keyword k i a where
   KRet    :: a   -> Keyword k i a
   KWord   :: k   -> Keyword k i ()
   KInfo   :: i a -> Keyword k i a
+  KLog    :: String -> Keyword k i ()
   KAssert :: Bool -> String -> Keyword k i ()
   KBind   :: Keyword k i a -> (a -> Keyword k i b) -> Keyword k i b
 
@@ -59,6 +60,10 @@ info = KInfo
 assertion :: Bool -> String -> Keyword k i ()
 assertion = KAssert
 
+-- | Logs a message
+log :: String -> Keyword k i ()
+log = KLog
+
 -- | The action consits of a computation that can fail
 -- and possibly a revert action.
 type Action m e = (m (Either e ()), Maybe (m ()))
@@ -69,16 +74,11 @@ type Action m e = (m (Either e ()), Maybe (m ()))
 type Interpretation k m e = k -> Action m e
 
 safeAction :: (Monad m, Error e) => m a -> Action m e
-safeAction action =
-  ( do action
-       return (Right ())
-  , Nothing
-  )
+safeAction action = (voide action, Nothing)
 
 safeActionRollback :: (Monad m, Error e) => m a -> m b -> Action m e
 safeActionRollback action rollback =
-  ( do action
-       return (Right ())
+  ( voide action
   , Just (rollback >> return ())
   )
 
@@ -108,6 +108,7 @@ actionRollback action rollback =
 data Context k i m e = Context {
     keywordInterpretation :: Interpretation k m e
   , infoInterpretation    :: forall a . i a -> m a
+  , logInterpretation     :: String -> m ()
   }
 
 newtype Interpreter m e a = KI { unKI :: CME.ErrorT e (CMS.StateT [m ()] m) a }
@@ -117,6 +118,8 @@ evalStage0 :: (Monad m, Error e) => Context k i m e -> Keyword k i a -> Interpre
 evalStage0 ctx (KRet a)  = return a
 
 evalStage0 ctx (KInfo c) = KI . lift . lift $ infoInterpretation ctx c
+
+evalStage0 ctx (KLog m) = KI . lift . lift $ logInterpretation ctx m
 
 evalStage0 ctx (KWord k) = do
   let (step,revert) = keywordInterpretation ctx k
@@ -147,3 +150,10 @@ evalStage1 m = do
 runKeyword :: (Monad m, Error e) => Context k i m e -> Keyword k i a -> m (Either e a)
 runKeyword ctx k = evalStage1 $ evalStage0 ctx k
 
+-- * Helpers
+
+voide :: (Monad m, Error e) => m a -> m (Either e ())
+voide m = do m >> return (Right ())
+
+void :: (Monad m) => m a -> m ()
+void m = do m >> return ()

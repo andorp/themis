@@ -52,6 +52,7 @@ cabal-version:       >=1.10
 library
   -- Modules exported by the library.
   exposed-modules:     Test.Themis.Test,
+                       Test.Themis.Keyword,
                        Test.Themis.Provider.Interactive,
                        Test.Themis.Provider.TestFramework
   
