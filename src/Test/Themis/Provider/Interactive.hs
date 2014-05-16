@@ -6,6 +6,8 @@ module Test.Themis.Provider.Interactive (
   , module Test.Themis.Test
   ) where
 
+import Control.Exception (SomeException, catch)
+
 import Test.QuickCheck
 import Test.QuickCheck.Test (isSuccess)
 
@@ -31,7 +33,7 @@ runTestCase t = testCaseCata eval shrink t >> return ()
       return passed
 
     evalAssertion :: (Show a, Eq a) => Assertion a -> IO (Bool,String)
-    evalAssertion = assertionCata equals satisfies property where
+    evalAssertion = assertionCata equals satisfies property err where
 
       equals expected found msg = return $
         if (expected == found)
@@ -49,6 +51,11 @@ runTestCase t = testCaseCata eval shrink t >> return ()
         return $ if (isSuccess result)
           then (True, "[PASSED]")
           else (False, concat $ ["[FAILED] Output:", output result, " ", msg])
+
+      err value msg = catch
+        (do return $! value
+            return (False, "[FAILED] Exception is not occured: " ++ msg))
+        (\msg' -> return (True, "[PASSED] Exception is occured: " ++ (show (msg'::SomeException))))
 
 runTestsIO :: TestSet -> IO ()
 runTestsIO = testSetCata (mapM_ runTestCase)
