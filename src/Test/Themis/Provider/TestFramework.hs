@@ -16,9 +16,11 @@ import qualified Test.QuickCheck as QC
 import           Test.Themis.Test
 
 buildTestCase :: TestCase -> TF.Test
-buildTestCase = testCaseCata eval shrink
+buildTestCase = testCaseCata eval shrink group
   where
     shrink test tests = TF.testGroup "Shrink test group" (test:tests)
+
+    group name tests = TF.testGroup name tests
 
     eval testName = assertionCata equals satisfies property err
       where

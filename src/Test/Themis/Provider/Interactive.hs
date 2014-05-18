@@ -18,7 +18,7 @@ import Test.Themis.Test
 -- to the standard out if the test passed, otherwise the "name: [FAILED] msg expected found"
 -- message.
 runTestCase :: TestCase -> IO ()
-runTestCase t = testCaseCata eval shrink t >> return ()
+runTestCase t = testCaseCata eval shrink group t >> return ()
   where
     shrink test tests = do
       passed <- test
@@ -26,6 +26,10 @@ runTestCase t = testCaseCata eval shrink t >> return ()
         then return ()
         else sequence_ tests
       return passed
+
+    group groupName tests = do
+      putStrLn $ "[TEST GROUP]: " ++ groupName
+      fmap and $ sequence tests
 
     eval testName assertion = do
       (passed, msg) <- evalAssertion assertion

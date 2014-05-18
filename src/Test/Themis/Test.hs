@@ -12,6 +12,7 @@ module Test.Themis.Test (
   , testSetCata
   , test
   , shrink
+  , group
   , runTest
   , module Test.QuickCheck.Gen
   ) where
@@ -63,21 +64,25 @@ data TestCase
   = forall a . (Show a, Eq a) => TestCase (TestName, Assertion a)
   -- ^ A test case that can be evaulated somehow
   | Shrink TestCase [TestCase]
-  -- ^ If the test case fails, the rest of the tests would skipped
+  -- ^ If the test case passes, the rest of the tests would skipped
   -- ^ otherwise they evaulated to locate the problem
+  | TestGroup TestName [TestCase]
+  -- ^ A named group of test cases
 
 testCase name assertion = TestCase (name, assertion)
 
 testCaseCata
   :: (TestName -> forall a . (Show a, Eq a) => Assertion a -> b)
   -> (b -> [b] -> b)
+  -> (TestName -> [b] -> b)
   -> TestCase
   -> b
-testCaseCata testcase shrink t = case t of
+testCaseCata testcase shrink group t = case t of
   TestCase (name, assertion) -> testcase name assertion
   Shrink test tests          -> shrink (testCaseCata' test) (map testCaseCata' tests)
-    where
-      testCaseCata' = testCaseCata testcase shrink
+  TestGroup name tests       -> group name (map testCaseCata' tests)
+  where
+    testCaseCata' = testCaseCata testcase shrink group
 
 -- Test Set is a set of test cases, which elements will be
 -- evaulated some of the test case runners
@@ -118,3 +123,6 @@ test name assertion = tell . singleton $ testCase name assertion
 -- Define the test case that can shrink to one or more sub cases
 shrink :: (Eq a, Show a) => TestName -> Assertion a -> Test b -> Test ()
 shrink name assertion shrinks = tell . singleton $ Shrink (testCase name assertion) (buildTestSet shrinks)
+
+group :: TestName -> Test b -> Test ()
+group name tests = tell . singleton $ TestGroup name (buildTestSet tests)
