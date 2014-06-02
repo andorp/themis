@@ -14,7 +14,6 @@ module Test.Themis.Keyword (
   , step
   , info
   , assertion
-  , module Test.Themis.Assertion
   ) where
 
 import           Control.Monad.Error
@@ -22,9 +21,6 @@ import           Control.Monad.State
 import           Control.Monad.Trans
 import qualified Control.Monad.Trans.Error as CME
 import qualified Control.Monad.Trans.State as CMS
-
-import           Test.Themis.Assertion (Assertion(..))
-import qualified Test.Themis.Assertion as TTAssert
 
 {-
 Every testeable system with test steps can be represented by keywords.
