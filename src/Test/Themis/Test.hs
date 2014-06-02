@@ -4,6 +4,7 @@
 module Test.Themis.Test (
     Assertion(..)
   , assertion
+  , ioTest
   , TestName
   , Test
   , TestCase
