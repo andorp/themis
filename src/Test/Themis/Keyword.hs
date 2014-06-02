@@ -14,6 +14,7 @@ module Test.Themis.Keyword (
   , step
   , info
   , assertion
+  , module Test.Themis.Assertion
   ) where
 
 import           Control.Monad.Error
@@ -21,6 +22,9 @@ import           Control.Monad.State
 import           Control.Monad.Trans
 import qualified Control.Monad.Trans.Error as CME
 import qualified Control.Monad.Trans.State as CMS
+
+import           Test.Themis.Assertion (Assertion(..))
+import qualified Test.Themis.Assertion as TTAssert
 
 {-
 Every testeable system with test steps can be represented by keywords.
@@ -157,3 +161,16 @@ voide m = do m >> return (Right ())
 
 void :: (Monad m) => m a -> m ()
 void m = do m >> return ()
+
+-- * Assertions
+
+-- | Checks if the found value equals to the expected one, if it differs
+-- the test will fail
+assertEquals :: (Show a, Eq a) => a -> a -> String -> Keyword k i ()
+assertEquals found expected msg =
+  assertion (found == expected) (concat [msg, " found: ", show found, " expected: ", show expected])
+
+-- | Checks if the found value satisfies the given predicate, it not the test will fail
+satisfies :: (Show a) => a -> (a -> Bool) -> String -> Keyword k i ()
+satisfies value pred msg =
+  assertion (pred value) (concat [msg, " value: ", show value, " does not satisfies the predicate."])

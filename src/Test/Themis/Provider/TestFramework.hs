@@ -16,13 +16,13 @@ import qualified Test.QuickCheck as QC
 import           Test.Themis.Test
 
 buildTestCase :: TestCase -> TF.Test
-buildTestCase = testCaseCata eval shrink group
+buildTestCase = testCaseCata eval evalIO shrink group
   where
     shrink test tests = TF.testGroup "Shrink test group" (test:tests)
 
     group name tests = TF.testGroup name tests
 
-    eval testName = assertionCata equals satisfies property err
+    eval testName = assertion equals satisfies property err
       where
         equals expected found msg = TFH.testCase testName (HU.assertEqual msg expected found)
 
@@ -30,7 +30,9 @@ buildTestCase = testCaseCata eval shrink group
 
         property prop gen msg = TFQ.testProperty testName (QC.forAll gen prop)
 
-        err value msg = TFH.testCase testName $ do
+        err value msg = TFH.testCase testName $ checkException value msg
+
+    checkException value msg = do
           ok <- catch (do { return $! value; return False })
                       emptyCatch
           if ok
@@ -39,6 +41,18 @@ buildTestCase = testCaseCata eval shrink group
           where
             emptyCatch :: SomeException -> IO Bool
             emptyCatch _ = return True
+
+    evalIO testName computation = TFH.testCase testName $ do
+      computed <- computation
+      assertion equals satisfies property checkException computed
+      where
+        isSuccess (QC.Success {}) = True
+        isSuccess _ = False
+
+        equals expected found msg = HU.assertEqual msg expected found
+        satisfies  prop found msg = HU.assertEqual msg True (prop found)
+        property prop gen msg = do result <- QC.quickCheckWithResult (QC.stdArgs { QC.chatty = False }) (QC.forAll gen prop)
+                                   HU.assertEqual (msg ++ QC.output result) True (isSuccess result)
 
 buildTestSet :: TestSet -> [TF.Test]
 buildTestSet = testSetCata (map buildTestCase)

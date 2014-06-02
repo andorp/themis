@@ -18,7 +18,7 @@ import Test.Themis.Test
 -- to the standard out if the test passed, otherwise the "name: [FAILED] msg expected found"
 -- message.
 runTestCase :: TestCase -> IO ()
-runTestCase t = testCaseCata eval shrink group t >> return ()
+runTestCase t = testCaseCata eval evalIO shrink group t >> return ()
   where
     shrink test tests = do
       passed <- test
@@ -36,8 +36,10 @@ runTestCase t = testCaseCata eval shrink group t >> return ()
       putStrLn $ concat [testName, ": ", msg]
       return passed
 
+    evalIO testName = (>>= eval testName)
+
     evalAssertion :: (Show a, Eq a) => Assertion a -> IO (Bool,String)
-    evalAssertion = assertionCata equals satisfies property err where
+    evalAssertion = assertion equals satisfies property err where
 
       equals expected found msg = return $
         if (expected == found)
