@@ -42,17 +42,11 @@ buildTestCase = testCaseCata eval evalIO shrink group
             emptyCatch :: SomeException -> IO Bool
             emptyCatch _ = return True
 
-    evalIO testName computation = TFH.testCase testName $ do
-      computed <- computation
-      assertion equals satisfies property checkException computed
-      where
-        isSuccess (QC.Success {}) = True
-        isSuccess _ = False
-
-        equals expected found msg = HU.assertEqual msg expected found
-        satisfies  prop found msg = HU.assertEqual msg True (prop found)
-        property prop gen msg = do result <- QC.quickCheckWithResult (QC.stdArgs { QC.chatty = False }) (QC.forAll gen prop)
-                                   HU.assertEqual (msg ++ QC.output result) True (isSuccess result)
+    evalIO testName comp = TFH.testCase testName $ do
+      result <- comp
+      case result of
+        Left e -> fail $ show e
+        Right x -> return ()
 
 buildTestSet :: TestSet -> [TF.Test]
 buildTestSet = testSetCata (map buildTestCase)

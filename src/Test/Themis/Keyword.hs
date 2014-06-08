@@ -10,10 +10,11 @@ module Test.Themis.Keyword (
   , safeActionRollback
   , action
   , actionRollback
-  , Interpretation
+  , Interpretation(..)
   , step
   , info
-  , assertion
+  , assertEquals
+  , satisfies
   ) where
 
 import           Control.Monad.Error
@@ -31,105 +32,89 @@ context of the interpretation of each keyword. This way multiple
 reusable scripts can be written in the haskell do notation.
 -}
 
-data Keyword k i a where
-  KRet    :: a   -> Keyword k i a
-  KWord   :: k   -> Keyword k i ()
-  KInfo   :: i a -> Keyword k i a
-  KLog    :: String -> Keyword k i ()
-  KAssert :: Bool -> String -> Keyword k i ()
-  KBind   :: Keyword k i a -> (a -> Keyword k i b) -> Keyword k i b
+data Keyword k a where
+  KRet    :: a   -> Keyword k a
+  KWord   :: k a -> Keyword k a
+  KInfo   :: k a -> Keyword k a
+  KLog    :: String -> Keyword k ()
+  KAssert :: Bool -> String -> Keyword k ()
+  KBind   :: Keyword k a -> (a -> Keyword k b) -> Keyword k b
 
-instance Monad (Keyword k i) where
+instance Monad (Keyword k) where
   return  = KRet
   m >>= k = KBind m k
 
 -- | The 'k' step that will be interpreted in some action.
-step :: k -> Keyword k i ()
+step :: k a -> Keyword k a
 step = KWord
 
-
--- | The 'i' informational step which gather information about
--- the system.
-info :: i a -> Keyword k i a
+-- | The 'k' information what has no rollback
+info :: k a -> Keyword k a
 info = KInfo
-
 
 -- | Assertion on the first value, the assertion fails if the
 -- first value is False. After the failure the revering actions
 -- will be computed.
-assertion :: Bool -> String -> Keyword k i ()
+assertion :: Bool -> String -> Keyword k ()
 assertion = KAssert
 
 -- | Logs a message
-log :: String -> Keyword k i ()
+log :: String -> Keyword k ()
 log = KLog
 
 -- | The action consits of a computation that can fail
 -- and possibly a revert action.
-type Action m e = (m (Either e ()), Maybe (m ()))
+newtype Action m e a = Action (m (Either e a), Maybe (a -> m ()))
 
 -- | The interpretation of a 'k' basic keyword consists of a pair
 -- the first is a computation which computes an error result or a
 -- unit, and a revert action of the computation.
-type Interpretation k m e = k -> Action m e
+newtype Interpretation k m e = Interpretation { unInterpret :: forall a . k a -> Action m e a }
 
-safeAction :: (Monad m, Error e) => m a -> Action m e
-safeAction action = (voide action, Nothing)
+safeAction :: (Functor m, Monad m, Error e) => m a -> Action m e a
+safeAction action = Action (fmap Right action, Nothing)
 
-safeActionRollback :: (Monad m, Error e) => m a -> m b -> Action m e
-safeActionRollback action rollback =
-  ( voide action
-  , Just (rollback >> return ())
-  )
+safeActionRollback :: (Functor m, Monad m, Error e) => m a -> (a -> m b) -> Action m e a
+safeActionRollback action rollback = Action (fmap Right action, Just (void . rollback))
 
 -- The action has no rollback but the action can fail.
-action :: (Monad m, Error e) => m (Either e a) -> Action m e
-action act =
-  ( do x <- act
-       case x of
-         Left e  -> return $ Left e
-         Right _ -> return $ Right ()
-  , Nothing
-  )
+action :: (Functor m, Monad m, Error e) => m (Either e a) -> Action m e a
+action act = Action (act, Nothing)
 
 -- The action has a given rollback and the action can fail
-actionRollback :: (Monad m, Error e) => m (Either e a) -> m b -> Action m e
-actionRollback action rollback =
-  ( do x <- action
-       case x of
-         Left e  -> return $ Left e
-         Right y -> return $ Right ()
-  , Just (rollback >> return ())
-  )
+actionRollback :: (Functor m, Monad m, Error e) => m (Either e a) -> (a -> m b) -> Action m e a
+actionRollback action rollback = Action (action, Just (void . rollback))
 
 -- | The keyword evaluation context consists of an interpretation
--- function, and an information command interpretation function, which
--- turns every 'i' command into a monadic computation
-data Context k i m e = Context {
+-- function, which turns every 'k' command into a monadic computation
+data Context k m e = Context {
     keywordInterpretation :: Interpretation k m e
-  , infoInterpretation    :: forall a . i a -> m a
   , logInterpretation     :: String -> m ()
   }
 
 newtype Interpreter m e a = KI { unKI :: CME.ErrorT e (CMS.StateT [m ()] m) a }
   deriving (Monad, MonadState [m ()], MonadError e)
 
-evalStage0 :: (Monad m, Error e) => Context k i m e -> Keyword k i a -> Interpreter m e a
+evalStage0 :: (Monad m, Error e) => Context k m e -> Keyword k a -> Interpreter m e a
 evalStage0 ctx (KRet a)  = return a
 
-evalStage0 ctx (KInfo c) = KI . lift . lift $ infoInterpretation ctx c
+evalStage0 ctx (KInfo k) = do
+  let Action (step,revert) = (unInterpret $ keywordInterpretation ctx) k
+  x <- KI . lift $ lift step
+  case x of
+    Left e -> throwError e
+    Right y -> return y
 
 evalStage0 ctx (KLog m) = KI . lift . lift $ logInterpretation ctx m
 
 evalStage0 ctx (KWord k) = do
-  let (step,revert) = keywordInterpretation ctx k
+  let Action (step,revert) = (unInterpret $ keywordInterpretation ctx) k
   x <- KI . lift $ lift step
   case x of
     Left e -> throwError e
-    Right _ -> do
-      case revert of
-        Just r  -> modify (r:)
-        Nothing -> return ()
+    Right y -> do
+      maybe (return ()) (\r -> modify (r y:)) revert
+      return y
 
 evalStage0 ctx (KBind m k) = do
   x <- evalStage0 ctx m
@@ -137,7 +122,7 @@ evalStage0 ctx (KBind m k) = do
 
 evalStage0 ctx (KAssert a msg) = unless a . throwError $ strMsg msg
 
-evalStage1 :: (Monad m, Error e) => Interpreter m e a -> m (Either e a)
+evalStage1 :: (Functor m, Monad m, Error e) => Interpreter m e a -> m (Either e a)
 evalStage1 m = do
   (result, revert) <- flip CMS.runStateT [] . CME.runErrorT $ unKI m
   case result of
@@ -147,26 +132,26 @@ evalStage1 m = do
 
 -- | The 'runKeyword' interprets the given keyword in a computational context, and
 -- reverts the steps if any error occurs.
-runKeyword :: (Monad m, Error e) => Context k i m e -> Keyword k i a -> m (Either e a)
+runKeyword :: (Functor m, Monad m, Error e) => Context k m e -> Keyword k a -> m (Either e a)
 runKeyword ctx k = evalStage1 $ evalStage0 ctx k
 
 -- * Helpers
 
-voide :: (Monad m, Error e) => m a -> m (Either e ())
+voide :: (Functor m, Monad m, Error e) => m a -> m (Either e ())
 voide m = do m >> return (Right ())
 
-void :: (Monad m) => m a -> m ()
-void m = do m >> return ()
+
 
 -- * Assertions
 
 -- | Checks if the found value equals to the expected one, if it differs
 -- the test will fail
-assertEquals :: (Show a, Eq a) => a -> a -> String -> Keyword k i ()
+assertEquals :: (Show a, Eq a) => a -> a -> String -> Keyword k ()
 assertEquals found expected msg =
   assertion (found == expected) (concat [msg, " found: ", show found, " expected: ", show expected])
 
 -- | Checks if the found value satisfies the given predicate, it not the test will fail
-satisfies :: (Show a) => a -> (a -> Bool) -> String -> Keyword k i ()
+satisfies :: (Show a) => a -> (a -> Bool) -> String -> Keyword k ()
 satisfies value pred msg =
   assertion (pred value) (concat [msg, " value: ", show value, " does not satisfies the predicate."])
+

@@ -7,6 +7,7 @@ module Test.Themis.Provider.Interactive (
   ) where
 
 import Control.Exception (SomeException, catch)
+import Control.Monad.Error (strMsg)
 
 import Test.QuickCheck
 import Test.QuickCheck.Test (isSuccess)
@@ -36,7 +37,13 @@ runTestCase t = testCaseCata eval evalIO shrink group t >> return ()
       putStrLn $ concat [testName, ": ", msg]
       return passed
 
-    evalIO testName = (>>= eval testName)
+    evalIO testName comp = do
+      result <- comp
+      case result of
+        Left e -> do putStrLn $ concat [testName, ": ", "[FAILED] ", show e]
+                     return False
+        Right x -> do putStrLn $ concat [testName, ": [PASSED]"]
+                      return True
 
     evalAssertion :: (Show a, Eq a) => Assertion a -> IO (Bool,String)
     evalAssertion = assertion equals satisfies property err where

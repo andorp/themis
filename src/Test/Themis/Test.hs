@@ -20,6 +20,7 @@ module Test.Themis.Test (
 
 import           Control.Applicative
 import           Control.Monad
+import           Control.Monad.Error
 import           Control.Monad.Trans
 import           Control.Monad.Identity
 import           Control.Monad.Writer
@@ -34,8 +35,8 @@ type TestName = String
 data TestCase
   = forall a . (Show a, Eq a) => TestCase (TestName, Assertion a)
   -- ^ A test case that can be evaulated somehow
-  | forall a . (Show a, Eq a) => TestCaseIO (TestName,IO (Assertion a))
-  -- ^ A test case that has some IO computation
+  | forall a e . (Show e, Error e) => TestCaseIO (TestName, IO (Either e a))
+  -- ^ A test case that has some erroneous IO computation
   | Shrink TestCase [TestCase]
   -- ^ If the test case passes, the rest of the tests would skipped
   -- ^ otherwise they evaulated to locate the problem
@@ -48,7 +49,7 @@ testCaseIO name assertion = TestCaseIO (name, assertion)
 
 testCaseCata
   :: (TestName -> forall a . (Show a, Eq a) => Assertion a -> b)
-  -> (TestName -> (forall a . (Show a, Eq a) => IO (Assertion a) -> b))
+  -> (TestName -> (forall a e . (Show e, Error e) => IO (Either e a) -> b))
   -> (b -> [b] -> b)
   -> (TestName -> [b] -> b)
   -> TestCase
@@ -95,9 +96,9 @@ runTest eval = eval . buildTestSet
 test :: (Eq a, Show a) => TestName -> Assertion a -> Test ()
 test name assertion = tell . singleton $ testCase name assertion
 
--- | Creates a test case with the given name and the given IO computation of
--- a given assertion
-ioTest :: (Eq a, Show a) => TestName -> IO (Assertion a) -> Test ()
+-- | Creates a test case with the given name and the given
+-- erroneous IO computation
+ioTest :: (Show e, Error e) => TestName -> IO (Either e a) -> Test ()
 ioTest name assertion = tell . singleton $ testCaseIO name assertion
 
 -- * Combinators
