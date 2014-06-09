@@ -103,9 +103,13 @@ ioTest name assertion = tell . singleton $ testCaseIO name assertion
 
 -- * Combinators
 
--- Define the test case that can shrink to one or more sub cases
-shrink :: (Eq a, Show a) => TestName -> Assertion a -> Test b -> Test ()
-shrink name assertion shrinks = tell . singleton $ Shrink (testCase name assertion) (buildTestSet shrinks)
+-- | Define a test set and it's shrink. If the test group of the test set fails the
+-- shrinks will be evaluated, to investigate further the problem
+shrink :: TestName -> Test a -> Test b -> Test ()
+shrink name tests shrinks =
+  tell . singleton $ Shrink (TestGroup name (buildTestSet tests))
+                            (buildTestSet shrinks)
 
+-- | Defina a test group with a given name
 group :: TestName -> Test b -> Test ()
 group name tests = tell . singleton $ TestGroup name (buildTestSet tests)
