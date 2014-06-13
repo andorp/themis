@@ -12,6 +12,7 @@ module Test.Themis.Test (
   , testCaseCata
   , testSetCata
   , test
+  , assertEquals
   , shrink
   , group
   , runTest
@@ -100,6 +101,18 @@ test name assertion = tell . singleton $ testCase name assertion
 -- erroneous IO computation
 ioTest :: (Show e, Error e) => TestName -> IO (Either e a) -> Test ()
 ioTest name assertion = tell . singleton $ testCaseIO name assertion
+
+-- | Creates a test case with the given name, expected, found result, and
+-- a message which is displayed when the test fails
+assertEquals :: (Eq a, Show a) => TestName -> a -> a -> String -> Test ()
+assertEquals name expected found msg = test name (Equals expected found msg)
+
+-- | Creates a test case with the given name, a property to satisfy, found value,
+-- and a message which is displayed when the test fails
+assertSatisfy :: (Eq a, Show a) => TestName -> (a -> Bool) -> a -> String -> Test ()
+assertSatisfy name pred found msg = test name (Satisfies pred found msg)
+
+
 
 -- * Combinators
 
