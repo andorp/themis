@@ -147,7 +147,7 @@ voide m = do m >> return (Right ())
 -- | Checks if the found value equals to the expected one, if it differs
 -- the test will fail
 assertEquals :: (Show a, Eq a) => a -> a -> String -> Keyword k ()
-assertEquals found expected msg =
+assertEquals expected found msg =
   assertion (found == expected) (concat [msg, " found: ", show found, " expected: ", show expected])
 
 -- | Checks if the found value satisfies the given predicate, it not the test will fail
