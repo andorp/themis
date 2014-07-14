@@ -6,7 +6,7 @@ module Test.Themis.Provider.Interactive (
   , module Test.Themis.Test
   ) where
 
-import Control.Exception (SomeException, catch)
+import Control.Exception (SomeException, catch, evaluate)
 import Control.Monad.Error (strMsg)
 
 import Test.QuickCheck
@@ -21,6 +21,9 @@ import Test.Themis.Test
 runTestCase :: TestCase -> IO ()
 runTestCase t = testCaseCata eval evalIO shrink group t >> return ()
   where
+    passed = "[PASSED]"
+    failed = "[FAILED]"
+
     shrink test tests = do
       passed <- test
       if passed
@@ -40,35 +43,43 @@ runTestCase t = testCaseCata eval evalIO shrink group t >> return ()
     evalIO testName comp = do
       result <- comp
       case result of
-        Left e -> do putStrLn $ concat [testName, ": ", "[FAILED] ", show e]
+        Left e -> do putStrLn $ concat [testName, ": ", failed, " ", show e]
                      return False
-        Right x -> do putStrLn $ concat [testName, ": [PASSED]"]
+        Right x -> do putStrLn $ concat [testName, ": ", passed]
                       return True
 
     evalAssertion :: (Show a, Eq a) => Assertion a -> IO (Bool,String)
     evalAssertion = assertion equals satisfies property err where
 
-      equals expected found msg = return $
-        if (expected == found)
-          then (True, "[PASSED]")
-          else (False, concat $ ["[FAILED] ", msg, " Expected: ", show expected, " Found: ", show found])
+      catchSomeEx :: IO a -> (SomeException -> IO a) -> IO a
+      catchSomeEx = catch
 
-      satisfies property found msg = return $
+      tryOut a = do
+        catchSomeEx
+          (evaluate a)
+          (\ex -> return (False, concat [failed, " Unexpected exception: ", show ex]))
+
+      equals expected found msg = tryOut $
+        if (expected == found)
+          then (True, passed)
+          else (False, concat $ [failed, " ", msg, " Expected: ", show expected, " Found: ", show found])
+
+      satisfies property found msg = tryOut $
         if (property found)
-          then (True, "[PASSED]")
-          else (False, concat $ ["[FAILED] ", msg, " Found: ", show found, " does not satisfy the given property"])
+          then (True, passed)
+          else (False, concat $ [failed, " ", msg, " Found: ", show found, " does not satisfy the given property"])
 
       property prop gen msg = do
         let args = stdArgs { chatty = False }
         result <- quickCheckWithResult args (forAll gen prop)
-        return $ if (isSuccess result)
-          then (True, "[PASSED]")
-          else (False, concat $ ["[FAILED] Output:", output result, " ", msg])
+        tryOut $ if (isSuccess result)
+          then (True, passed)
+          else (False, concat $ [failed," Output:", output result, " ", msg])
 
-      err value msg = catch
+      err value msg = catchSomeEx
         (do return $! value
-            return (False, "[FAILED] Exception is not occured: " ++ msg))
-        (\msg' -> return (True, "[PASSED] Exception is occured: " ++ (show (msg'::SomeException))))
+            return (False, concat [failed, " Exception is not occured: ", msg]))
+        (\msg' -> return (True, concat [passed, " Exception is occured: ", show (msg'::SomeException)]))
 
 runTestsIO :: TestSet -> IO ()
 runTestsIO = testSetCata (mapM_ runTestCase)
