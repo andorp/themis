@@ -10,7 +10,7 @@ name:                themis
 -- PVP summary:      +-+------- breaking API changes
 --                   | | +----- non-breaking API additions
 --                   | | | +--- code changes with no API change
-version:             0.3.1.0
+version:             0.4.0.0
 
 -- A short (one-line) description of the package.
 synopsis:            Simple Test Framework with several providers
@@ -52,7 +52,6 @@ cabal-version:       >=1.10
 library
   -- Modules exported by the library.
   exposed-modules:     Test.Themis.Assertion,
-                       Test.Themis.BlackBox.EqPartition,
                        Test.Themis.Keyword,
                        Test.Themis.Keyword.Encaps,
                        Test.Themis.Provider.Interactive,
