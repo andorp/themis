@@ -28,3 +28,9 @@ assertProperty name prop gen msg = test name (Property prop gen msg)
 -- given message is displayed.
 assertError :: (Eq a,Show a) => TestName -> a -> String -> Test ()
 assertError name x msg = test name (Error x msg)
+
+-- | Creates test cases of equality for the given partitions listed in test-name,
+-- input value, output value, error message structure.
+eqPartitions :: (Eq b, Show b) => (a -> b) -> [(TestName, a, b, String)] -> Test ()
+eqPartitions underTest =
+  mapM_ (\(name, input, output, msg) -> assertEquals name output (underTest input) msg)
